@@ -68,6 +68,7 @@ struct GeneralSettingsView: View {
     @ObservedObject var serverController: ServerController
     @State private var showingResetAlert = false
     @State private var selectedClients = Set<String>()
+    @AppStorage("allowLANConnections") private var allowLANConnections = false
 
     private var trustedClients: [String] {
         serverController.getTrustedClients()
@@ -75,6 +76,46 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
+            // Network Settings Section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Network Access")
+                            .font(.headline)
+                        Spacer()
+                    }
+
+                    Text("Control which devices can connect to this iMCP server.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 4)
+
+                Toggle(isOn: Binding(
+                    get: { self.allowLANConnections },
+                    set: { newValue in
+                        self.allowLANConnections = newValue
+                        Task {
+                            await self.serverController.setAllowLANConnections(newValue)
+                        }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Allow connections from other devices on this network")
+                            .font(.body)
+                        Text(
+                            self.allowLANConnections
+                                ? "Other devices on your local network can discover and connect to this server"
+                                : "Only this Mac can connect to this server (recommended for security)"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Trusted Clients Section
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {

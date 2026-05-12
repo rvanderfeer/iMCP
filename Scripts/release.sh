@@ -41,6 +41,7 @@ Commands:
   release     Create a GitHub release (no assets)
   upload      Upload the release asset to GitHub
   help        Show this help
+  install     Install locally
 
 Environment:
   APP_NAME          App name (default: iMCP)
@@ -418,6 +419,11 @@ upload_asset() {
   gh release view --web "${VERSION}"
 }
 
+install() {
+	rm -rf /Applications/iMCP.app
+	cp -r ~/Library/Developer/Xcode/DerivedData/iMCP-*/Build/Products/Release/iMCP.app /Applications/
+}
+
 all() {
   # Full release flow with strict gating at each step.
   build_check
@@ -483,6 +489,9 @@ case "${COMMAND}" in
   upload)
     upload
     ;;
+  install)
+    install
+	;;
   help|-h|--help)
     print_usage
     ;;

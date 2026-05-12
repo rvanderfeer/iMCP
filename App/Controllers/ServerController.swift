@@ -176,6 +176,9 @@ final class ServerController: ObservableObject {
     @AppStorage("utilitiesEnabled") private var utilitiesEnabled = true  // Default enabled
     @AppStorage("weatherEnabled") private var weatherEnabled = false
 
+    // MARK: - AppStorage for Network Settings
+    @AppStorage("allowLANConnections") private var allowLANConnections = false
+
     // MARK: - AppStorage for Trusted Clients
     @AppStorage("trustedClients") private var trustedClientsData = Data()
 
@@ -237,6 +240,11 @@ final class ServerController: ObservableObject {
         trustedClients = Set<String>()
     }
 
+    // MARK: - LAN Connection Management
+    func setAllowLANConnections(_ allowed: Bool) async {
+        await networkManager.setAllowLANConnections(allowed)
+    }
+
     // MARK: - Connection Approval Methods
     private func cleanupApprovalState() {
         pendingClientName = ""
@@ -265,6 +273,7 @@ final class ServerController: ObservableObject {
         Task {
             // Initialize bindings from AppStorage before the server starts.
             await networkManager.updateServiceBindings(self.currentServiceBindings)
+            await networkManager.setAllowLANConnections(self.allowLANConnections)
             await self.networkManager.start()
             self.updateServerStatus("Running")
 
@@ -539,21 +548,14 @@ actor NetworkDiscoveryManager {
     private let serviceDomain: String
     var listener: NWListener
     private let browser: NWBrowser
+    private var allowLANConnections: Bool = false
 
     init(serviceType: String, serviceDomain: String) throws {
         self.serviceType = serviceType
         self.serviceDomain = serviceDomain
 
-        // Local-only Bonjour advertisement.
-        let parameters = NWParameters.tcp
-        parameters.acceptLocalOnly = true
-        parameters.includePeerToPeer = false
-
-        if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
-            as? NWProtocolIP.Options
-        {
-            tcpOptions.version = .v4
-        }
+        // Start with loopback-only by default
+        let parameters = Self.createParameters(allowLAN: false)
 
         // Listen and advertise via Bonjour.
         self.listener = try NWListener(using: parameters)
@@ -566,6 +568,28 @@ actor NetworkDiscoveryManager {
         )
 
         log.info("Network discovery manager initialized with Bonjour service type: \(serviceType)")
+    }
+
+    private static func createParameters(allowLAN: Bool) -> NWParameters {
+        let parameters = NWParameters.tcp
+        
+        if allowLAN {
+            // Allow connections from all interfaces (LAN)
+            parameters.acceptLocalOnly = false
+            parameters.includePeerToPeer = false
+        } else {
+            // Restrict to loopback-only (same machine)
+            parameters.acceptLocalOnly = true
+            parameters.includePeerToPeer = false
+        }
+
+        if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
+            as? NWProtocolIP.Options
+        {
+            tcpOptions.version = .v4
+        }
+
+        return parameters
     }
 
     func start(
@@ -592,15 +616,7 @@ actor NetworkDiscoveryManager {
         listener.cancel()
 
         // Recreate listener on an ephemeral port.
-        let parameters: NWParameters = NWParameters.tcp  // Explicit type
-        parameters.acceptLocalOnly = true
-        parameters.includePeerToPeer = false
-
-        if let tcpOptions = parameters.defaultProtocolStack.internetProtocol
-            as? NWProtocolIP.Options
-        {
-            tcpOptions.version = .v4
-        }
+        let parameters: NWParameters = Self.createParameters(allowLAN: allowLANConnections)
 
         let newListener: NWListener = try NWListener(using: parameters)
         let service = NWListener.Service(type: self.serviceType, domain: self.serviceDomain)
@@ -618,7 +634,20 @@ actor NetworkDiscoveryManager {
 
         self.listener = newListener
 
-        log.notice("Restarted listener with a dynamic port")
+		log.notice("Restarted listener with a dynamic port (allowLAN: \(self.allowLANConnections))")
+    }
+
+    func setAllowLANConnections(_ allowed: Bool) async throws {
+        guard allowLANConnections != allowed else {
+            log.debug("LAN connection setting unchanged: \(allowed)")
+            return
+        }
+
+        allowLANConnections = allowed
+        log.info("Updating LAN connection setting to: \(allowed)")
+
+        // Restart the listener with the new parameters
+        try await restartWithRandomPort()
     }
 }
 
@@ -1026,6 +1055,21 @@ actor ServerNetworkManager {
             for (_, connectionManager) in connections {
                 await connectionManager.notifyToolListChanged()
             }
+        }
+    }
+
+    // Update LAN connection setting and restart the listener.
+    func setAllowLANConnections(_ allowed: Bool) async {
+        guard let discoveryManager = discoveryManager else {
+            log.error("Cannot set LAN connections: discovery manager not initialized")
+            return
+        }
+
+        do {
+            try await discoveryManager.setAllowLANConnections(allowed)
+            log.info("LAN connections setting updated to: \(allowed)")
+        } catch {
+            log.error("Failed to update LAN connections setting: \(error)")
         }
     }
 }
