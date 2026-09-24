@@ -104,15 +104,17 @@ struct GeneralSettingsView: View {
                 }
                 .padding(.bottom, 4)
 
-                Toggle(isOn: Binding(
-                    get: { self.allowLANConnections },
-                    set: { newValue in
-                        self.allowLANConnections = newValue
-                        Task {
-                            await self.serverController.setAllowLANConnections(newValue)
+                Toggle(
+                    isOn: Binding(
+                        get: { self.allowLANConnections },
+                        set: { newValue in
+                            self.allowLANConnections = newValue
+                            Task {
+                                await self.serverController.setAllowLANConnections(newValue)
+                            }
                         }
-                    }
-                )) {
+                    )
+                ) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Allow connections from other devices on this network")
                             .font(.body)
